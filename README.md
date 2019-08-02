@@ -9,7 +9,7 @@ In this project, data is first cleaned with preprocessing and feature selection 
 <br/>
 
 ## Preprocessing
-![img](readme_img/pre1)
+![img](readme_img/pre1) 
 ![img](readme_img/pre2)
 ![img](readme_img/pre3)
 

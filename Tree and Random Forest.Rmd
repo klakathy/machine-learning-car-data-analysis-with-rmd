@@ -1,0 +1,139 @@
+---
+title: "Don't get kicked"
+output:
+  word_document: 
+    toc: yes
+  html_notebook: 
+    number_sections: yes
+    toc: yes
+  html_document:
+    df_print: paged
+---
+# TREE MODEL & RANDOM FORESTS
+## Set-up
+Clear the workspace and load packages. 
+```{r}
+rm(list = ls())
+library(readxl)
+library(tidyverse)
+library(ggplot2)
+```
+
+Load dataset
+```{r}
+car <-read.csv("TRAIN_Numeric.csv", header=TRUE)
+View(car)
+```
+
+## Set up for holdout validation
+We select 30% of dataset. Using these indices, we will create a test and a training dataset. 
+```{r}
+set.seed(1) 
+index <- sample(nrow(car), nrow(car)*0.3) 
+test <- car[index,]      
+training <-car[-index,]   
+```
+
+## Tree model 1-VehicleAge, VehBCost, BPER, PRIMEUNIT, VehYear
+load rpart package
+```{r}
+library(rpart)
+library(rpart.plot)
+```
+
+(1) Build the tree model with cp=0
+```{r}
+ct_model<-rpart(IsBadBuy~VehicleAge+VehBCost+VehOdo,data=training,method="class",control=rpart.control(cp=0))  
+rpart.plot(ct_model)
+```
+
+(2) Check the cross-validation table using `printcp()`. Prune the tree using the cp value with the minimum xerror. 
+```{r}
+printcp(ct_model)
+plotcp(ct_model)
+min_xerror<-ct_model$cptable[which.min(ct_model$cptable[,"xerror"]),]
+min_xerror
+min_xerror_tree<-prune(ct_model, cp=min_xerror[1])
+rpart.plot(min_xerror_tree)
+```
+
+(3) Apply the model (`min_xerror_tree`) to the test dataset to get the predicted probabilities. Save the result as a new variable `ct_pred_prob` in test.  
+```{r}
+test$ct_pred_prob<-predict(min_xerror_tree,test)[,2]  
+```
+
+(4) Using the 50% cut-off, generate class prediction. Save the result as a new variable `ct_pred_class` in test.  
+```{r}
+test$ct_pred_class=ifelse(test$ct_pred_prob>0.5,"1","0")
+```
+
+(5) Calculate the error rate of this model when we use the 50% cut-off. 
+```{r}
+table(test$ct_pred_class==test$IsBadBuy)
+```
+
+(6) Generate a confusion table of this model. 
+```{r}
+table(test$ct_pred_class,test$IsBadBuy, dnn=c("predicted","actual")) 
+```
+
+## Tree model2-VehicleAge, VehBCost, VehOdo, WheelTypeID, BodyType
+(1) Build the tree model with cp=0
+```{r}
+ct_model1<-rpart(IsBadBuy~VehicleAge+VehBCost+VehOdo+WheelTypeID+VehYear+BodyType, data=training,control=rpart.control(cp=0),method="class")
+rpart.plot(ct_model1)
+```
+
+(2)Check the cross-validation table using `printcp()`. Prune the tree using the cp value with the minimum xerror. 
+```{r}
+printcp(ct_model1)
+plotcp(ct_model1)
+
+min_xerror1<-ct_model1$cptable[which.min(ct_model1$cptable[,"xerror"]),]
+min_xerror1
+min_xerror_tree1<-prune(ct_model1, cp=min_xerror1[1],method="class")
+rpart.plot(min_xerror_tree1)
+```
+
+(3) Apply the model (`min_xerror_tree1`) to the test dataset to get the predicted probabilities. Using 50% cut-off and check the performance with the confusion matrix. 
+```{r}
+test$ct_pred_prob1<-predict(min_xerror_tree1,test)[,2] 
+test$ct_pred_class1=ifelse(test$ct_pred_prob1>0.5,"1","0")
+table(test$ct_pred_class1==test$IsBadBuy)
+table(test$ct_pred_class1,test$IsBadBuy, dnn=c("predicted","actual")) 
+```
+
+## Random forests-VehicleAge, VehBCost, VehOdo, WheelTypeID, BodyType
+
+(1)Build random forest with 50% cut-off  
+```{r}
+library(randomForest)
+set.seed(2)
+rf_training_model<-randomForest(as.factor(IsBadBuy)~VehicleAge+VehBCost+VehOdo+WheelTypeID+BodyType, data=training,ntree=500,cutoff=c(0.5,0.5),mtry=2,importance=TRUE, method="class")
+rf_training_model
+```
+
+(2) Using 50% cut-off and check the performance with the confusion matrix. 
+```{r}
+test$rf_pred_prob2<-predict(rf_training_model,test,type="prob")[,2]
+test$rf_pred_class2<-predict(rf_training_model,test,type="class")
+table(test$rf_pred_class2,test$IsBadBuy, dnn=c("predicted","actual")) 
+```
+
+
+## 4. Performance Visualization with ROC
+
+Plot ROC curves of all of the models developed. 
+```{r}
+library(pROC)
+
+ct_roc<-roc(test$IsBadBuy,test$ct_pred_prob1,auc=TRUE)
+plot(ct_roc,print.auc=TRUE,col="blue",print.auc.y=.6)
+
+ct_roc<-roc(test$IsBadBuy,test$ct_pred_prob,auc=TRUE)
+plot(ct_roc,print.auc=TRUE,col="red",print.auc.y=.5,add=TRUE)
+
+rf_roc<-roc(test$IsBadBuy,test$rf_pred_prob2,auc=TRUE)
+plot(rf_roc,print.auc=TRUE,col="green",print.auc.y=1, add=TRUE)
+
+```

@@ -1,0 +1,70 @@
+---
+title: "XGboost"
+output:
+  word_document:
+    toc: yes
+  html_document:
+    df_print: paged
+  html_notebook:
+    number_sections: yes
+    toc: yes
+---
+# XGboost 
+## Set-up
+```{r}
+library('xgboost')
+library("Matrix")
+library(pROC) 
+library(caret)
+library(ggplot2)
+drat:::addRepo("dmlc")
+require(xgboost)
+```
+
+## Read Data and 
+```{r}
+train<-read.csv("TRAIN_Numeric.csv",header=TRUE,na='NULL')
+train=na.omit(train)
+Del_rolnames<-c('NA_NULL','NA_','NA_PINK','NA_WI','HASPRIME') 
+Delete<-function(data,rolnames){
+    data = data[,!names(data) %in% rolnames]
+    return(data)
+}
+train=Delete(train,Del_rolnames)
+sum(is.na(train))
+```
+
+## Data Segmentation
+```{r}
+Train<-train
+ind<- sample(2, nrow(Train),replace=T, prob=c(0.7,0.3))
+
+train<-Train[ind==1,]
+test<-Train[ind==2,]
+train_x<-subset(train,select=-IsBadBuy)
+train_y<-subset(train,select=IsBadBuy)
+test_x<-subset(test,select=-IsBadBuy)
+test_y<-subset(test,select=IsBadBuy)
+
+```
+
+
+## fit-predict
+```{r}
+bst<-xgboost(as.matrix(train_x),label=train_y$IsBadBuy,max.depth=20,nround=20,objective="binary:logistic",eval_metric='logloss',eta=0.6)
+y_predict<-predict(bst,as.matrix(test_x))
+y_predict_binary<-ifelse(y_predict >0.00125, 1, 0)
+y_predict_binary<-as.matrix(y_predict_binary)
+colnames(y_predict_binary) = c('IsBadBuy')
+```
+
+
+
+## Result
+```{r}
+names<-colnames(train_x)
+importance_matrix<-xgb.importance(names,model=bst)
+importance_matrix
+xgb.plot.importance(importance_matrix[1:15])
+```
+

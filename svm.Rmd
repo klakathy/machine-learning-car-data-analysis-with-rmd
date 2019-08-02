@@ -1,0 +1,198 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+  word_document:
+    toc: yes
+  html_notebook:
+    number_sections: yes
+    toc: yes
+---
+
+# Model SVM
+## Set-up
+```{r}
+# clear the workspace 
+rm(list = ls())     
+
+# install all the packages
+library(readxl)
+library(tidyverse)
+library(ggplot2)
+library(e1071)
+library(caTools)
+library(caret)
+library(pROC)
+```
+
+##Read the "Don't get kicked" dataset 
+```{r}
+rawdata<-read.csv("TRAIN_Numeric.csv")
+```
+
+##Set up for holdout validation, randomly select 70% of the dataset as trainning dataset and saved the rest as testing dataset
+```{r}
+set.seed(11)   # set a random seed 
+sample <- sample.int(n = nrow(rawdata), size = floor(.7*nrow(rawdata)), replace = F)
+train <- rawdata[sample, ]
+test  <- rawdata[-sample, ]
+```
+
+##Select variables used for svm model [Variables were selected based on maximazing information gain]
+```{r}
+sixVariables <- c("VehicleAge","VehBCost","BPER","PRIMEUNIT","VehYear","VehOdo")
+x <- train[sixVariables]
+y <- train["IsBadBuy"]
+```
+
+
+
+
+#first svm model 
+##inital model with linear kernel
+```{r}
+model_svm<-svm(IsBadBuy ~ VehicleAge+VehBCost+BPER+PRIMEUNIT+VehYear+VehOdo,
+               data=train, 
+               type='C-classification',
+               kernel="linear", 
+               cost=0.01)         
+model_svm
+```
+
+##predict and test the model on the testing data 
+```{r}
+test$svm_pred_class <- predict(model_svm,test)
+
+result <- test %>%
+  select(IsBadBuy,svm_pred_class)
+
+result$IsBadBuy_factor <- result$IsBadBuy %>%
+  as.factor() 
+```
+
+##confusion matrix
+```{r}
+confusionMatrix(data = result$svm_pred_class, reference = result$IsBadBuy_factor)
+```
+
+##ROC Curve
+```{r}
+test$svm_dv<-as.numeric(attr(predict(model_svm, test, decision.values = TRUE),"decision.values"))
+svm_roc<-roc(test$IsBadBuy,test$svm_dv,auc=TRUE)
+plot(svm_roc,print.auc=TRUE,col="blue")
+```
+
+
+
+#Second model Testing out "radial" kernal 
+```{r}
+model_svm2<-svm(IsBadBuy ~ VehicleAge+VehBCost+BPER+PRIMEUNIT+VehYear+VehOdo,
+               type='C-classification',
+               data=train,                   
+               kernel="radial",
+               cost=0.01)
+print(model_svm2)
+```
+
+##Predict and test the model on the testing data 
+```{r}
+#predict and test the model on the testing data 
+test$svm_pred_class2 <- predict(model_svm2,test)
+
+result <- test %>%
+  select(IsBadBuy,svm_pred_class2)
+
+result$IsBadBuy_factor <- result$IsBadBuy %>%
+  as.factor() 
+
+```
+
+##Confusion table 
+```{r}
+confusionMatrix(data = result$svm_pred_class2, reference = result$IsBadBuy_factor)
+```
+
+##ROC Curve
+```{r}
+test$svm_dv2<-as.numeric(attr(predict(model_svm2, test, decision.values = TRUE),"decision.values"))
+svm_roc_2<-roc(test$IsBadBuy,test$svm_dv2,auc=TRUE)
+plot(svm_roc_2,print.auc=TRUE,col="red")
+```
+
+
+
+#Third model using "sigmoid"
+```{r}
+model_svm3<-svm(IsBadBuy ~ VehicleAge+VehBCost+BPER+PRIMEUNIT+VehYear+VehOdo,
+               type='C-classification',
+               data=train,                   
+               kernel="sigmoid",
+               cost=0.01)
+print(model_svm3)
+```
+
+##Predict and test the model on the testing data 
+```{r}
+#predict and test the model on the testing data 
+test$svm_pred_class3 <- predict(model_svm3,test)
+
+result <- test %>%
+  select(IsBadBuy,svm_pred_class3)
+
+result$IsBadBuy_factor <- result$IsBadBuy %>%
+  as.factor() 
+
+```
+
+##Confusion table 
+```{r}
+confusionMatrix(data = result$svm_pred_class3, reference = result$IsBadBuy_factor)
+```
+
+##ROC Curve
+```{r}
+test$svm_dv3<-as.numeric(attr(predict(model_svm3, test, decision.values = TRUE),"decision.values"))
+svm_roc_3<-roc(test$IsBadBuy,test$svm_dv3,auc=TRUE)
+plot(svm_roc_3,col="black")
+plot(svm_roc_2,col="green",add=TRUE)
+plot(svm_roc,col="blue",add=TRUE)
+```
+
+
+#Comput probilility 
+```{r}
+#build the inital model using training data
+model_svm_prob<-svm(IsBadBuy ~ VehicleAge+VehBCost+BPER+PRIMEUNIT+VehYear+VehOdo,
+               type='C-classification',
+               data=train,                   
+               kernel="linear",
+               cost=0.01,
+               probability=TRUE)
+model_svm_prob
+print(model_svm_prob)
+
+#predict and test the model on the testing data 
+test$svm_pred_class_prob <- predict(model_svm_prob,test,probability=TRUE,type="response")
+
+#predict probabilities
+prob_table<-attr(predict(model_svm_prob,test,probability=TRUE), "probabilities") 
+
+#compute a proability table
+prob_table <- data.frame(prob_table)
+
+#define if probability of a badbuy is less than 0.12, than it is a badbuy. 
+prob_table$badbuy=ifelse(prob_table$X1<0.11, "1", "0") 
+prob_table$badbuy <- as.factor(prob_table$badbuy)
+
+test$IsBadBuy <- as.factor(test$IsBadBuy)
+
+#confusion matrix
+confusionMatrix(data=prob_table$badbuy, reference = test$IsBadBuy)
+
+test$svm_dv4<-attr(predict(model_svm_prob, test,probability=TRUE ),"probabilities")
+```
+
+
+
+

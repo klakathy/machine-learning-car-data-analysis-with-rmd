@@ -1,0 +1,67 @@
+---
+title: "R Notebook"
+output:
+  word_document:
+    toc: yes
+  html_document:
+    df_print: paged
+  html_notebook:
+    number_sections: yes
+    toc: yes
+---
+# Performance visualization with ROC
+## Set-up
+Clear the workspace and load packages. 
+```{r}
+rm(list = ls())
+library(readxl)
+library(tidyverse)
+```
+
+## Load final prediction csv of Xgboost, SVM, randomforest, classification tree, NNET model.
+Let's load the dataset as xgboost.
+```{r}
+xgboost <- read.csv("roc_data/Xgboost.csv")
+view(xgboost)
+svm <- read.csv("roc_data/SVMPrediction.csv")
+view(svm)
+randomforest <- read.csv("roc_data/rf.csv")
+view(randomforest)
+tree1 <- read.csv("roc_data/tree1.csv")
+view(tree1)
+tree2 <- read.csv("roc_data/tree2.csv")
+view(tree2)
+temp <- read.csv("roc_data/temp1.csv")
+view(temp)
+```
+
+
+## Plot ROC curves developed one by one.
+```{r}
+#install.packages("pROC")
+library(pROC)
+
+temp_roc<-roc(temp$real,temp$predict,auc=TRUE)
+plot(temp_roc,print.auc=TRUE, print.auc.y=.31,col="black")
+
+xgboost_roc<-roc(xgboost$y_real,xgboost$y_pred,auc=TRUE)
+plot(xgboost_roc,print.auc=TRUE,print.auc.y=.23,col="blue",add=TRUE)
+
+tree2_roc<-roc(tree2$y_real,tree2$y_pred,auc=TRUE)
+plot(tree2_roc,print.auc=TRUE, print.auc.y=.39,col="purple",add=TRUE)
+
+randomforest_roc<-roc(randomforest$y_real,randomforest$y_pred,auc=TRUE)
+plot(randomforest_roc,print.auc=TRUE, print.auc.y=.47,col="green",add=TRUE)
+
+svm_roc<-roc(svm$y_real,svm$y_pred,auc=TRUE)
+plot(svm_roc,print.auc=TRUE, print.auc.y=.07,col="red",add=TRUE)
+
+tree1_roc<-roc(tree1$y_real,tree1$y_pred,auc=TRUE)
+plot(tree1_roc,print.auc=TRUE, print.auc.y=.15,col="orange",add=TRUE)
+
+#add legend
+par(mar=c(5.1,4.1,4.1,2.1), xpd=TRUE)
+legend("bottomright", c("RandomForest","Classification Tree 2","Nnet","XGboost", "Classification Tree 1","SVM"), lty=1, 
+    col = c("green","purple","black","blue","orange","red"), bty="n", inset=c(0,0))
+
+```

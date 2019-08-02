@@ -1,0 +1,237 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  word_document: default
+
+---
+# Kick Preprocessing  
+
+```{r}
+rm(list = ls())
+#install.packages("rlang")
+#install.packages('dummies')
+#install.packages('dplyr')
+library(dummies)
+library(dplyr)
+library(readr)
+library(tidyverse)
+#setwd("")
+```
+
+## 1. Combine the test and train data for the integrity of the preprocessing  
+  
+Train_Test = Train + Test  
+```{r}
+train <- read_csv("original_data/training.csv", col_types = cols(VNZIP1 = col_character()),na='NULL')
+test <- read_csv("original_data/test.csv", col_types = cols(VNZIP1 = col_character()),na='NULL')
+train2 <- subset(train, select = -IsBadBuy )
+Train_Test<-rbind(train2,test)
+```
+
+## 2. Data Observation  
+
+```{r}
+Data=Train_Test
+head(Data)
+dim(Data)
+```
+
+
+* Dummy  
+Auction Make Color Nationality Size TopThreeAmericanName VNST  
+* Delete  
+PurchDate WheelType Trim  
+* Replace  
+VehYear Model Submodel Transmission  
+* Specific Method  
+PRIMEUNIT AUCGUART BYRNO  
+* Do Nothing  
+VehicleAge WheelTypeID VehoDo (MMR*) VehBCost IsOnlineSale WarrantyCost  
+  
+## 3-1. Specific Method (running at least 5min)
+
+```{r}
+b1=train%>%group_by(BYRNO)%>%summarise(n=n(),bad=sum(IsBadBuy,na.rm=T))%>%arrange(desc(bad))
+sum(b1$bad!=0)
+nullp<-function(col1,data1){
+  n1=nrow(data1)
+  t1=sum(is.na(data1[col1]))
+  p1=t1/n1
+  return(p1)
+}
+
+proc18_29<-function(data1){
+  n1=nrow(data1)
+  name=names(data1)
+  
+  nulla<-function(col1,data1){
+    n1=nrow(data1)
+    mean1=round(mean(data1[[col1]],na.rm = T))
+    print(c("mean",names(data1[col1]),mean1))
+    for(i in 1:n1){
+      if(is.na(data1[i,col1]))data1[i,col1]=mean1
+    }
+    return(data1[col1])
+  }
+  
+  for(c1 in 10:ncol(data1)){
+    if(name[c1]=="MMRAcquisitionAuctionAveragePrice") break
+  }
+  
+  print("null percentage")
+  for (i in c1:(c1+10)) {
+    p=nullp(i,data1)
+    print(c(name[i],p))
+  }
+  
+  ##processing price (with average)
+  for (i in c1:(c1+7)) {
+    data1[i]=nulla(i,data1)
+  }
+  
+  ##processing HASPRIME and AUCGUART
+  HASPRIME=ifelse(is.na(data1$PRIMEUNIT),0,1)
+  data1=data.frame(data1,HASPRIME)
+  PRIME=ifelse(data1$PRIMEUNIT=="NO"|is.na(data1$PRIMEUNIT),0,1)
+  AUCGU=ifelse(data1$AUCGUART=="GREEN"|is.na(data1$AUCGUART),0,1)
+  data1$PRIMEUNIT=PRIME
+  data1$AUCGUART=AUCGU
+  remove(PRIME)
+  remove(AUCGU)
+  remove(HASPRIME)
+  
+  ##processing BYRNO
+  BGOOD=0
+  B1=0
+  B2=0
+  B3=0
+  B4=0
+  B5=0
+  B6=0
+  BPER=0
+  data1=data.frame(data1,BGOOD,B1,B2,B3,B4,B5,B6,BPER)
+  remove(BGOOD)
+  remove(B1)
+  remove(B2)
+  remove(B3)
+  remove(B4)
+  remove(B5)
+  remove(B6)
+  remove(BPER)
+  
+  for(i in 1:n1){
+    n2=nrow(b1)
+    for(j in 1:n2){
+      if(data1$BYRNO[i]==b1$BYRNO[j]){
+        if(b1$bad[j]==0){
+          data1$BGOOD[i]=1
+        } else {
+          t=j
+          data1$B1[i]=t%/%32
+          t=t%%32
+          data1$B2[i]=t%/%16
+          t=t%%16
+          data1$B3[i]=t%/%8
+          t=t%%8
+          data1$B4[i]=t%/%4
+          t=t%%4
+          data1$B5[i]=t%/%2
+          data1$B6[i]=t%%2
+          data1$BPER[i]=b1$bad[j]/b1$n[j]
+        }
+      }
+    }
+  }
+  return(data1)
+}
+Data=proc18_29(Data)
+Data<-Data%>%select(-'BYRNO')
+```
+
+## 3-2. Dummy  
+
+```{r}
+Dum_rolnames<-c('Auction','Make','Color','Nationality','Size','TopThreeAmericanName','VNST')
+# d2<-Data%>%select('RefId','Auction','Make','Color','Nationality','Size','TopThreeAmericanName','VNST')
+# d2<-Data[,Dum_rolnames]
+# d2<-d2%>%
+#   mutate(Auction=as.factor(Auction),Make=as.factor(Make),Color=as.factor(Color),Nationality=as.factor(Nationality),Size=as.factor(Size),TopThreeAmericanName=as.factor(TopThreeAmericanName),VNST=as.factor(VNST))
+# t<-dummy.data.frame(d3,sep="_")
+
+Dummy<-function(data,rolnames){
+  data=data.frame(data)
+  tmp<-data%>%select()
+  for (name in rolnames) {
+    tmp<-data.frame(tmp,as.factor(data[,name]))
+  }
+  names(tmp)<-rolnames
+  tmp<-dummy.data.frame(tmp,sep='_')
+  data<-cbind(data,tmp)
+  data = data[,!names(data) %in% rolnames]
+  return (data)
+}
+Data<-Dummy(Data,Dum_rolnames)
+```
+
+## 3-3. Delete  
+
+```{r}
+Del_rolnames<-c('PurchDate','WheelType','Trim')
+Delete<-function(data,rolnames){
+    data = data[,!names(data) %in% rolnames]
+    return(data)
+}
+Data<-Delete(Data,Del_rolnames)
+```
+
+## 3-4. Replace  
+
+```{r}
+VehYear<-(2012-Data$VehYear)
+Data<-subset(Data,select=-VehYear)
+Data<-cbind(Data,VehYear)
+
+Data$Drive <- 0
+Data$Drive[grep("FWD", Data$Model , ignore.case=TRUE, fixed=FALSE)] <- 1
+Data$Drive[grep("2WD", Data$Model , ignore.case=TRUE, fixed=FALSE)] <- 1
+Data$Drive[grep("RWD", Data$Model , ignore.case=TRUE, fixed=FALSE)] <- 1
+Data$Drive[grep("4WD", Data$Model , ignore.case=TRUE, fixed=FALSE)] <- 2
+Data$Drive[grep("AWD", Data$Model , ignore.case=TRUE, fixed=FALSE)] <- 2
+Data<-subset(Data,select=-Model)
+
+
+Data$BodyType <- 0
+Data$BodyType[grep("SEDAN", Data$SubModel , ignore.case=TRUE, fixed=FALSE)] <- 1
+Data$BodyType[grep("COUPE", Data$SubModel , ignore.case=TRUE, fixed=FALSE)] <- 2
+Data$BodyType[grep("SPORT", Data$SubModel , ignore.case=TRUE, fixed=FALSE)] <- 2
+Data$BodyType[grep("SUV", Data$SubModel , ignore.case=TRUE, fixed=FALSE)]   <- 3
+Data$BodyType[grep("CUV", Data$SubModel , ignore.case=TRUE, fixed=FALSE)]   <- 4
+Data$BodyType[grep("WAGON", Data$SubModel , ignore.case=TRUE, fixed=FALSE)] <- 4
+Data$BodyType[grep("CONVERTIBLE", Data$SubModel , ignore.case=TRUE, fixed=FALSE)] <- 5
+Data$BodyType[grep("HATCHBACK", Data$SubModel , ignore.case=TRUE, fixed=FALSE)]   <- 6
+Data$BodyType[grep("MINIVAN", Data$SubModel , ignore.case=TRUE, fixed=FALSE)]     <- 7
+Data$BodyType[grep("UTILITY", Data$SubModel , ignore.case=TRUE, fixed=FALSE)]     <- 8
+Data$BodyType[grep("CAB", Data$SubModel , ignore.case=TRUE, fixed=FALSE)]         <- 9
+Data$BodyType[grep("PASSENGER", Data$SubModel , ignore.case=TRUE, fixed=FALSE)]   <- 10
+Data<-subset(Data,select=-SubModel)
+
+Data$Transm <- 0
+# Data$Transm[grep("AUTO", Data$Transmission , ignore.case=TRUE, fixed=FALSE)] <- "2" #->all full value should be auto
+Data$Transm[grep("MANUAL", Data$Transmission, ignore.case=TRUE, fixed=FALSE)] <- 1
+Data<-subset(Data,select=-Transmission)
+```
+
+* Output  
+
+```{r}
+TRAIN<-Data[1:dim(train)[1],]
+TEST<-Data[(dim(train)[1]+1):(dim(Data)[1]),]
+write.csv(Data,"Test_Train.csv",row.names = FALSE)
+write.csv(TRAIN,"TRAIN_Numeric.csv",row.names = FALSE)
+write.csv(TEST,"TEST_Numeric.csv",row.names = FALSE)
+```
+
+Since kaggle stoped the evaluation of this test, only training data is used in the following process

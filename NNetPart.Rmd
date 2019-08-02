@@ -1,0 +1,77 @@
+---
+title: "R Notebook"
+output:
+  word_document:
+    toc: yes
+  html_document:
+    df_print: paged
+  html_notebook:
+    number_sections: yes
+    toc: yes
+---
+## Set-up
+Clear the workspace and load packages. 
+```{r}
+rm(list = ls())
+library(readxl)
+library(tidyverse)
+library(ggplot2)
+library(pROC)
+library(nnet)
+library(devtools)
+source_url('https://gist.githubusercontent.com/fawda123/7471137/raw/466c1474d0a505ff044412703516c34f1a4684a5/nnet_plot_update.r')
+```
+
+Let's load the dataset as car. Select top 15 variables based on their importance according to my group member's analysis
+```{r}
+car <- read.csv("TRAIN_Numeric.csv", header=TRUE, na="NULL")
+
+df1=na.omit(car)
+columnsNeeded=c("IsBadBuy","VehicleAge","VehBCost", "BPER", "PRIMEUNIT","VehYear","VehOdo","NA_MANHEIM","MMRAcquisitionAuctionAveragePrice","NA_GM", "Drive","NA_DODGE","NA_NC","MMRAcquisitionRetailAveragePrice","NA_MEDIUM.SUV","RefId")
+df1=subset(df1,select=columnsNeeded)
+```
+
+## Set up for holdout validation
+Let's select 30% of dataset. Using these indices, we will create a test and a training dataset. 
+```{r}
+set.seed(1)   # set a random seed 
+index <- sample(nrow(df1), nrow(df1)*0.3)  
+test <- df1[index,]       
+training <-df1[-index,]   
+```
+
+## 1. nnet model
+Build the  model to predict, with the target variable as IsBadBuy. Save the model as `nn`. 
+```{r}
+nn=nnet(IsBadBuy~., training, size = 14, decay =0.05, maxit =1000, linout = F, trace = T)
+```
+
+## 2. Use model to predict
+```{r}
+preds=predict(nn,test)
+
+```
+
+## 3. draw the ROC
+```{r}
+ROC<-roc(test$IsBadBuy,preds,auc=TRUE)
+plot(ROC,print.auc=TRUE,col="blue")
+
+```
+
+## 4. Threshold setting
+find the best threshold by have the maximal Youden's J statistic and set it to test.predict
+```{r}
+threshold=coords(ROC, x="best", input="threshold", best.method="youden")[1]
+test.predict=ifelse(preds>threshold, 1, 0 )
+```
+
+## 5. confusion matrix
+```{r}
+table(test.predict,test$IsBadBuy,dnn=c("Predict","Actual"))
+```
+
+## 6. draw the nnet plot 
+```{r}
+plot.nnet(nn)
+```

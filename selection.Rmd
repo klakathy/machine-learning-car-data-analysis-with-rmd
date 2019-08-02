@@ -1,0 +1,291 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  word_document: default
+
+---
+
+# Feature selection and reduction
+
+```{r}
+rm(list=ls())
+# install.packages("minerva")
+# install.packages("tidyverse")
+# install.packages("neuralnet")
+# install.packages("randomForest")
+# install.packages("leaps")
+# install.packages("corrplot")
+# install.packages("factoextra")
+library(dummies)
+library(dplyr)
+library(readr)
+library(tidyverse)
+library(tree)
+library(stats)
+library(neuralnet)
+library(randomForest)
+library(corrplot)
+library(minerva)
+library(leaps)
+library(factoextra)
+#setwd("")
+train <- read_csv("TRAIN_Numeric.csv", col_types = cols(VNZIP1 = col_character()))
+training <- read_csv("original_data/training.csv", col_types = cols(VNZIP1 = col_character(),PurchDate = col_date(format = "%m/%d/%Y")),na = "NULL")
+```
+
+## 0. revising 
+
+```{r}
+## 0-1. revise variable wheeltypeid (0 means other -> change null to 0)
+# train%>%group_by(WheelTypeID)%>%summarise(n=n()) #preview
+train <- train %>% 
+  mutate(WheelTypeID = replace(WheelTypeID,is.na(WheelTypeID) , 0))
+train%>%group_by(WheelTypeID)%>%summarise(n=n()) #check
+
+## 0-3. add target variable IsBadBuy
+train$IsBadBuy=training$IsBadBuy
+train%>%group_by(IsBadBuy)%>%summarise(n=n())  #check
+```
+
+## 1. features with low variance 90%  
+
+```{r}
+## 2-1-1. check variance of all features
+dim(train) #72983,148  # 1->id  148->isbadbuy
+#names(train)
+t1=train[,c(1,148)]
+for(i in 2:147){
+  tmp=train%>%group_by(train[[i]])%>%summarise(n=n(),p=n/72983)
+  if(sum(tmp[,3]>0.9)>0){
+    print(c(i,names(train[i])))
+    print(tmp)
+  }else{
+    t1=cbind(t1,train[i])
+  }
+}
+
+## 2-1-2. check variance of variable byrno -> delete b1-b6, keep bper?
+tmp=training%>%group_by(BYRNO)%>%summarise(n=n(),p=n/72983)
+sum(tmp[,3]<0.1)
+summary(tmp[,3])
+sum(tmp[,3]>0.05) #all groups of BYRNO is very small
+
+## 2-1-3. check variance of variable vnzip1 -> tmpdelete?
+tmp=training%>%group_by(VNZIP1)%>%summarise(n=n(),p=n/72983)
+sum(tmp[,3]<0.1)
+summary(tmp[,3])
+sum(tmp[,3]>0.05) #all groups of VNZIP1 is very small
+rm(tmp)
+
+names(t1)
+#id 1
+#target 2
+#numeric 3,46,15,16,5-13,22 -> 3-16
+#category 4,23-45,47,48     -> 17-42
+#tmpdelete 14               -> 43 vnzip
+#delete 17-21 b2-b6
+t1=t1[,c(1:3,46,15,16,5:13,22,4,23:45,47,48,14)]
+#names(t1)
+```
+
+## 2. correlation  
+
+```{r}
+## 2-2-1. Correlation 
+#for(i in 1:43)print(c(names(t1)[i],class(t1[,i])))
+cor=cor(t1[,2:42])
+corrplot(cor)
+
+## variable top three american / nationality is induced by variable make -> remove make or top three american as needed
+training%>%
+  group_by((training$Make))%>%
+  summarise(n=n(),n1=sum(Nationality=="AMERICAN"),n2=sum(Nationality=="OTHER"),n3=sum(Nationality=="THER ASIAN"),n4=sum(Nationality=="TOP LINE ASIAN"),nnull=sum(Nationality=="NULL"))
+
+training%>%group_by(TopThreeAmericanName)%>%summarise(n=n())
+training%>%
+  group_by((training$Make))%>%
+  summarise(n=n(),n1=sum(TopThreeAmericanName=="CHRYSLER",na.rm = T),n2=sum(TopThreeAmericanName=="FORD",na.rm = T),n3=sum(TopThreeAmericanName=="GM",na.rm = T),n4=sum(TopThreeAmericanName=="Other",na.rm = T))
+
+training%>%
+  group_by(Nationality)%>%
+  summarise(n=n(),n1=sum(TopThreeAmericanName=="CHRYSLER",na.rm = T),n2=sum(TopThreeAmericanName=="FORD",na.rm = T),n3=sum(TopThreeAmericanName=="GM",na.rm = T),n4=sum(TopThreeAmericanName=="OTHER",na.rm = T))
+#-> remove american,other asian in nationality (remove nationality)
+
+training%>%
+  filter(TopThreeAmericanName=="CHRYSLER")%>%
+  group_by(Make)%>%
+  summarise(n=n(),p=n/72983) #remove cherysler in topthree
+training%>%
+  filter(TopThreeAmericanName=="FORD")%>%
+  group_by(Make)%>%
+  summarise(n=n(),p=n/72983) #remove ford in topthree
+training%>%
+  filter(TopThreeAmericanName=="GM")%>%
+  group_by(Make)%>%
+  summarise(n=n(),p=n/72983) #remove chevrolet in make
+
+t1<-t1%>%
+  select(-Nationality_AMERICAN,-TopThreeAmericanName_CHRYSLER,-TopThreeAmericanName_FORD,-Make_CHEVROLET,-`Nationality_OTHER ASIAN`)
+t1=t1[,c(1:4,6,7,5,8:38)]# process vehbcost & mmrs 7:15
+names(t1)# numeric 3:16 ->14   cate 17:38 ->22   vnzip 39
+names(t1)[8:15]<-c("MMR1","MMR2","MMR3","MMR4","MMR5","MMR6","MMR7","MMR8")
+corrplot(cor(t1[,c(2:37)]))
+#Vehyear -> sell year!! (2012 - sell year)  ; Vehage -> age (sell year - buy year)
+
+## 2-2-2. Pearson -> linear relation
+tmp_p0.01=""
+tmp_p0.1=""
+for(i in 3:37){
+  t=cor.test(t1[,i],t1[,2])$estimate[[1]]
+  print(c(names(t1)[i],t))
+  if(t<0)t=-t
+  if(t<0.01){
+    tmp_p0.01=paste0(tmp_p0.01,",",names(t1)[i])
+  }else if(t<0.1){
+    tmp_p0.1=paste0(tmp_p0.1,",",names(t1)[i])
+  }
+}
+tmp_p0.01 #Data_OTHER,Data_CHRYSLER,Data_BLUE,Data_GREY,Data_SILVER,Data_WHITE
+tmp_p0.1 #WarrantyCost,VehOdo,VehBCost,MMR3,MMR4,Auction_ADESA,Data_MANHEIM,Data_DODGE,Make_FORD,Data_BLACK,Data_LARGE,Data_MEDIUM,Data_MEDIUM SUV,Data_GM,Data_OTHER.3,Data_FL,Data_TX,Drive,BodyType -> not applicable for drive and bodytype
+
+## 2-2-3. MIC -> non-linear relation
+tmp_m0.01=""
+tmp_m0.1=""
+## very slow, paste result here
+# [1] "VehicleAge"         "0.0197012833747379"
+# [1] "VehYear"            "0.0179228017671433"
+# [1] "WarrantyCost"       "0.0195353284293297"
+# [1] "VehOdo"             "0.0306881956942591"
+# [1] "VehBCost"           "0.0289261074351115"
+# [1] "MMR1"               "0.0382082721947003"
+# [1] "MMR2"               "0.0376668236979396"
+# [1] "MMR3"               "0.0339439781184802"
+# [1] "MMR4"               "0.0336913429218455"
+# [1] "MMR5"               "0.0381432038980992"
+# [1] "MMR6"               "0.0383239260409576"
+# [1] "MMR7"               "0.0373461971398233"
+# [1] "MMR8"              "0.037521479626478"
+# [1] "BPER"                "0.00859373701924393"
+for(i in 17:37){
+  t=mine(t1[,i],t1[,2])$MIC
+  print(c(names(t1)[i],t))
+  if(t<0.001){
+    tmp_m0.01=paste0(tmp_m0.01,",",names(t1)[i])
+  }else if(t<0.01){
+    tmp_m0.1=paste0(tmp_m0.1,",",names(t1)[i])
+  }
+}
+tmp_m0.01 #Data_MANHEIM,Data_OTHER,Data_CHRYSLER,Data_DODGE,Data_BLACK,Data_BLUE,Data_GREY,Data_SILVER,Data_WHITE,Data_LARGE,Data_MEDIUM,Data_MEDIUM SUV,Data_GM,Data_OTHER.3,Data_FL,Data_TX,BodyType -> not applicable for drive and bodytype
+tmp_m0.1 #Auction_ADESA,Make_FORD,Drive
+
+t1<-t1%>%
+  select(-Auction_OTHER,-Make_CHRYSLER,-Color_BLUE,-Color_GREY,-Color_SILVER,-Color_WHITE)
+t1<-t1%>%
+  select(-Size_LARGE,-TopThreeAmericanName_GM,-Make_DODGE,-Auction_MANHEIM,-'Size_MEDIUM SUV', -VNST_TX, -Size_MEDIUM, -VNST_FL, -TopThreeAmericanName_OTHER, -Color_BLACK)
+
+## 2-2-4. RF with single variable + cross validation  r2
+names(t1)
+t2<-t1%>%
+  mutate(IsBadBuy=as.factor(IsBadBuy),WheelTypeID=as.factor(WheelTypeID),Auction_ADESA=as.factor(Auction_ADESA),Make_FORD=as.factor(Make_FORD),Drive=as.factor(Drive),BodyType=as.factor(BodyType),VNZIP1=as.factor(VNZIP1)) ## t2: after-factor-t1
+
+for (i in 3:21) {
+ rf<-randomForest(IsBadBuy~t2[[i]],data=t2,importance=T)
+ print(c(names(t2)[i],(1-sum(rf$predicted==rf$y)/72983)))
+}
+rm(rf)
+
+# stepwise based on linear relationship, only for reference
+fwd1=regsubsets(IsBadBuy~.,data=t2[,2:20],nvmax=10, method="forward")
+summary(fwd1)
+bwd1=regsubsets(IsBadBuy~.,data=t2[,2:20],nvmax=10, method="backward")
+summary(bwd1)
+rm(fwd1,bwd1,tmp_m0.01,tmp_m0.1,tmp_p0.01,tmp_p0.1)
+
+t1<-t1%>%select(-MMR6,-MMR7,-MMR4)
+t2<-t2%>%select(-MMR6,-MMR7,-MMR4)
+```
+
+## 3. Importance  
+
+```{r}
+## 2-3-1. RF
+rftest0=randomForest(IsBadBuy~.,data=t2[,2:18],importance=T)
+rftest0
+varImpPlot(rftest0)
+importance(rftest0)
+```
+
+### reduction 
+
+```{r}
+## I. pca for numeric features
+names(t1)
+t3=t1
+for (i in 3:13) {
+  t3[[i]]<-scale(t3[[i]])
+}
+pcat<-princomp(t1[,3:13],cor=T)
+summary(pcat)
+screeplot(pcat)
+t3=data.frame(t3[,1:2],predict(pcat)[,1:5],t3[14:19]) ## t3: t1 + after pca
+
+###pca test
+names(t3)
+t4<-t3%>%
+  mutate(IsBadBuy=as.factor(IsBadBuy),WheelTypeID=as.factor(WheelTypeID),Auction_ADESA=as.factor(Auction_ADESA),Make_FORD=as.factor(Make_FORD),Drive=as.factor(Drive)) ## t4: t3 + after factor
+rftest1=randomForest(IsBadBuy~.,data=t4[,c(2:13)],importance=T)
+rftest1
+importance(rftest1)
+varImpPlot(rftest1)
+
+## II. k-means for category features
+names(t1)
+names(train)
+t_1<-train[,c(1,148,13,14,17,19:26,29:36,38:143,147)]
+t_2=t_1[,1]
+for(i in 2:128){
+  t_2 <- data.frame(t_2,as.factor(t_1[[i]]))
+}
+names(t_2)[2:128]<-names(t_1)[2:128] ## t_2: unselected variables + after factor
+
+## cluster
+#fviz_nbclust(t_2[,3:128], kmeans, method = "wss") + geom_vline(xintercept = 4, linetype = 2)
+set.seed(100)
+kclass=kmeans(t_2[,3:128],16,nstart=20)
+
+t5=t1
+t5$kclass=kclass$cluster
+t5$cl1=0
+t5$cl2=0
+t5$cl3=0
+t5$cl4=0
+t5<-t5%>%mutate(cl1 = replace(cl1,kclass>8,1))
+t5<-t5%>%mutate(cl2 = replace(cl1,(kclass%/%2)%%2==1,1))
+t5<-t5%>%mutate(cl3 = replace(cl1,(kclass%/%4)%%2==1,1))
+t5<-t5%>%mutate(cl4 = replace(cl1,kclass%%2==0,1))
+t5<-t5%>%select(-kclass) 
+t5<-t5[,c(1:18,20:23,19)] ## t5: t1 + after kmeans
+rm(t_1)
+
+###cluster test
+t6<-t5%>%
+  mutate(IsBadBuy=as.factor(IsBadBuy),WheelTypeID=as.factor(WheelTypeID),Auction_ADESA=as.factor(Auction_ADESA),Make_FORD=as.factor(Make_FORD),Drive=as.factor(Drive),BodyType=as.factor(BodyType),cl1=as.factor(cl1),cl2=as.factor(cl2),cl3=as.factor(cl3),cl4=as.factor(cl4)) ## t6: t5 + after factor
+rftest2=randomForest(IsBadBuy~.,data=t6[,c(2:22)],importance=T)
+rftest2
+importance(rftest2)
+varImpPlot(rftest2)
+```
+
+* Output  
+
+```{r}
+write.csv(train,"train88.csv",row.names = FALSE) # all: Train-nemeric + wheeltypeid + isbadbuy
+write.csv(t1,"t1.csv",row.names = FALSE) # selected features; importance see rftest0
+write.csv(t3,"t3.csv",row.names = FALSE) # selected features + pca
+write.csv(t5,"t5.csv",row.names = FALSE) # selected features + cluster
+```
+
+

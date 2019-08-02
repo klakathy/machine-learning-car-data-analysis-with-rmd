@@ -9,20 +9,20 @@ In this project, data is first cleaned with preprocessing and feature selection 
 <br/>
 
 ## Preprocessing
-![img](readme_img/pre1) 
-![img](readme_img/pre2)
-![img](readme_img/pre3)
+![img](readme_img/pre1.jpg) 
+![img](readme_img/pre2.jpg)
+![img](readme_img/pre3.jpg)
 
 ## SVM
-![img](readme_img/svm)
+![img](readme_img/svm.jpg)
 ## tree model
-![img](readme_img/tree)
+![img](readme_img/tree.jpg)
 ## random forest
-![img](readme_img/forest)
+![img](readme_img/forest.jpg)
 ## XGBoost
-![img](readme_img/xgb)
+![img](readme_img/xgb.jpg)
 ## NNet
-![img](readme_img/nnet)
+![img](readme_img/nnet.jpg)
 ## Evaluation ROC
-![img](readme_img/roc)
-![img](readme_img/result)
+![img](readme_img/roc.jpg)
+![img](readme_img/result.jpg)

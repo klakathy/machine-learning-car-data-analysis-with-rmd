@@ -1,5 +1,5 @@
 # Prediction of risks of auction used cars
-*An analysis about judging whether a car from auctions has issues by fitting multiple machine learning models based on R.*
+*An analysis about judging whether a car from auctions has issues by fitting multiple machine learning models based on R.*  
 <br/><br/>
 The purpose of this project is to learning the philosophy between cars tradings. It is a practise of employing machine learning methods. 
 
